@@ -117,6 +117,13 @@ footer{padding:15px 16px 45px;color:#7a8d96;text-align:center;font-size:.76rem}
  .items{grid-template-columns:repeat(3,1fr)}
 }
 </style>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+const firebaseConfig={apiKey:"AIzaSyA75NNM0M1BRQcAmW8xWDxnBQbrlE_e6n0",authDomain:"grupo-c-a6704.firebaseapp.com",projectId:"grupo-c-a6704",storageBucket:"grupo-c-a6704.firebasestorage.app",messagingSenderId:"158747116382",appId:"1:158747116382:web:5f528dafda98cbbda245cf",measurementId:"G-FF7YLEYYT0"};
+firebase.initializeApp(firebaseConfig);
+const firestore=firebase.firestore();
+</script>
 </head>
 <body>
 <div class="app">
@@ -204,7 +211,7 @@ footer{padding:15px 16px 45px;color:#7a8d96;text-align:center;font-size:.76rem}
       </ul>
       <p class="notice">A atividade usa recipientes didáticos inspirados em práticas de acondicionamento descritas em referências oficiais e técnicas. "Porquinho de chumbo" é um termo informal; o serviço deve utilizar recipientes e procedimentos autorizados.</p>
     </details>
-    <p class="notice" id="rankNotice">O ranking é compartilhado em nuvem entre quem acessa este link publicado. Em caso de empate na pontuação, vence quem completou o plantão mais rápido. Se o link for aberto fora do ambiente do Claude, o ranking usa apenas a memória deste aparelho.</p>
+    <p class="notice" id="rankNotice">O ranking é compartilhado em nuvem entre todos que acessam este link publicado. Em caso de empate na pontuação, vence quem completou o plantão mais rápido.</p>
   </div>
 </section>
 </main>
@@ -267,78 +274,15 @@ function stopTimer(){
   return state.elapsedMs;
 }
 
-/* ===== Ranking Global (banco de dados nativo do artefato, compartilhado entre todos os usuários) ===== */
-let dbApi=null, dbReady=null, rankingUnsub=null;
+/* ===== Ranking Global via Firebase Firestore ===== */
+let rankingUnsub=null;
 const LOCAL_FALLBACK_KEY="plantao_ranking_local_fallback";
-
-function getLocalFallback(){
-  try{return JSON.parse(localStorage.getItem(LOCAL_FALLBACK_KEY)||"[]")}catch(e){return []}
-}
-function pushLocalFallback(entry){
-  const arr=getLocalFallback();
-  arr.push(entry);
-  try{localStorage.setItem(LOCAL_FALLBACK_KEY,JSON.stringify(arr))}catch(e){}
-  return arr;
-}
-function sortRanking(arr){
-  return arr.slice().sort((a,b)=>{
-    if(b.score!==a.score)return b.score-a.score;
-    const ta=(a.timeMs==null?Infinity:a.timeMs), tb=(b.timeMs==null?Infinity:b.timeMs);
-    return ta-tb;
-  });
-}
-async function ensureDb(){
-  if(dbReady)return dbReady;
-  dbReady=(async()=>{
-    try{
-      if(window.claude&&typeof window.claude.use==="function"){
-        dbApi=await window.claude.use("db");
-      }
-    }catch(e){dbApi=null}
-    return dbApi;
-  })();
-  return dbReady;
-}
-function renderRankingList(arr){
-  const top3=sortRanking(arr).slice(0,3);
-  $("ranking").classList.remove("rank-loading");
-  $("ranking").innerHTML=top3.length?top3.map((x,i)=>`
-    <div class="rank-row"><div class="medal">${["🥇","🥈","🥉"][i]}</div>
-    <div class="rank-name">${escapeHtml(x.name)}</div>
-    <div class="rank-meta"><div class="rank-score">${x.score} pts</div><div class="rank-time">${formatTime(x.timeMs)}</div></div></div>`).join(""):"<p class='notice'>Ainda não há registros. Seja o primeiro do plantão!</p>";
-}
-async function pushToGlobalRanking(entry){
-  const db=await ensureDb();
-  if(db){
-    try{
-      await db.collection("ranking").add(entry);
-      return true;
-    }catch(e){
-      $("rankNotice").textContent="Não foi possível gravar no ranking global agora (conexão ou permissão). Seu resultado ficou salvo só neste aparelho.";
-      pushLocalFallback(entry);
-      return false;
-    }
-  }
-  pushLocalFallback(entry);
-  return false;
-}
-function startRankingPolling(){
-  $("ranking").classList.add("rank-loading");
-  ensureDb().then(db=>{
-    if(db){
-      if(rankingUnsub){rankingUnsub();rankingUnsub=null}
-      rankingUnsub=db.collection("ranking").orderBy("score","desc").limit(25).onSnapshot(
-        snap=>{
-          const arr=(snap.docs||[]).map(d=>d.data()).filter(Boolean);
-          renderRankingList(arr.length?arr:getLocalFallback());
-        },
-        ()=>{renderRankingList(getLocalFallback())}
-      );
-    }else{
-      renderRankingList(getLocalFallback());
-    }
-  });
-}
+function getLocalFallback(){try{return JSON.parse(localStorage.getItem(LOCAL_FALLBACK_KEY)||"[]")}catch(e){return[]}}
+function pushLocalFallback(entry){const arr=getLocalFallback();arr.push(entry);try{localStorage.setItem(LOCAL_FALLBACK_KEY,JSON.stringify(arr))}catch(e){}return arr}
+function sortRanking(arr){return arr.slice().sort((a,b)=>{if(Number(b.score)!==Number(a.score))return Number(b.score)-Number(a.score);const ta=a.timeMs==null?Infinity:Number(a.timeMs),tb=b.timeMs==null?Infinity:Number(b.timeMs);return ta-tb})}
+function renderRankingList(arr){const top3=sortRanking(arr).slice(0,3);$("ranking").classList.remove("rank-loading");$("ranking").innerHTML=top3.length?top3.map((x,i)=>`<div class="rank-row"><div class="medal">${["🥇","🥈","🥉"][i]}</div><div class="rank-name">${escapeHtml(x.name)}</div><div class="rank-meta"><div class="rank-score">${x.score} pts</div><div class="rank-time">${formatTime(x.timeMs)}</div></div></div>`).join(""):"<p class='notice'>Ainda não há registros. Seja o primeiro do plantão!</p>"}
+async function pushToGlobalRanking(entry){try{await firestore.collection("ranking").add({name:String(entry.name||"Profissional").slice(0,40),score:Number(entry.score)||0,timeMs:Number(entry.timeMs)||0,date:String(entry.date||new Date().toISOString())});$("rankNotice").textContent="Seu resultado foi salvo no ranking global.";return true}catch(e){console.error("Erro ao salvar ranking:",e);$("rankNotice").textContent="Não foi possível salvar no ranking global agora.";pushLocalFallback(entry);return false}}
+function startRankingPolling(){$("ranking").classList.add("rank-loading");if(rankingUnsub){rankingUnsub();rankingUnsub=null}rankingUnsub=firestore.collection("ranking").onSnapshot(snap=>{renderRankingList(snap.docs.map(d=>d.data()).filter(Boolean))},error=>{console.error("Erro ao carregar ranking:",error);$("rankNotice").textContent="Não foi possível carregar o ranking global agora.";renderRankingList(getLocalFallback())})}
 
 function renderQuestion(){
   const x=questions[state.q];
