@@ -283,9 +283,9 @@ function getLocalFallback(){try{return JSON.parse(localStorage.getItem(LOCAL_FAL
 function pushLocalFallback(entry){const arr=getLocalFallback();arr.push(entry);try{localStorage.setItem(LOCAL_FALLBACK_KEY,JSON.stringify(arr))}catch(e){}return arr}
 function sortRanking(arr){return arr.slice().sort((a,b)=>{if(Number(b.score)!==Number(a.score))return Number(b.score)-Number(a.score);const ta=a.timeMs==null?Infinity:Number(a.timeMs),tb=b.timeMs==null?Infinity:Number(b.timeMs);return ta-tb})}
 function renderRankingList(arr){
-  const top3=sortRanking(arr).slice(0,3);
+  const top10=sortRanking(arr).slice(0,10);
   $("ranking").classList.remove("rank-loading");
-  $("ranking").innerHTML=top3.length?top3.map((x,i)=>`<div class="rank-row"><div class="medal">${["🥇","🥈","🥉"][i]}</div><div class="rank-name">${escapeHtml(x.name)}</div><div class="rank-meta"><div class="rank-score">${x.score} pts</div><div class="rank-time">${formatTime(x.timeMs)}</div></div></div>`).join(""):"<p class='notice'>Ainda não há registros. Seja o primeiro do plantão!</p>";
+  $("ranking").innerHTML=top10.length?top10.map((x,i)=>`<div class="rank-row"><div class="medal">${i<3?["🥇","🥈","🥉"][i]:(i+1)+"º"}</div><div class="rank-name">${escapeHtml(x.name)}</div><div class="rank-meta"><div class="rank-score">${x.score} pts</div><div class="rank-time">${formatTime(x.timeMs)}</div></div></div>`).join(""):"<p class='notice'>Ainda não há registros. Seja o primeiro do plantão!</p>";
 }
 function showRankingError(message){
   if(rankingTimeout){clearTimeout(rankingTimeout);rankingTimeout=null}
