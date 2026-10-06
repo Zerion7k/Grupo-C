@@ -276,13 +276,68 @@ function stopTimer(){
 
 /* ===== Ranking Global via Firebase Firestore ===== */
 let rankingUnsub=null;
+let rankingTimeout=null;
 const LOCAL_FALLBACK_KEY="plantao_ranking_local_fallback";
+
 function getLocalFallback(){try{return JSON.parse(localStorage.getItem(LOCAL_FALLBACK_KEY)||"[]")}catch(e){return[]}}
 function pushLocalFallback(entry){const arr=getLocalFallback();arr.push(entry);try{localStorage.setItem(LOCAL_FALLBACK_KEY,JSON.stringify(arr))}catch(e){}return arr}
 function sortRanking(arr){return arr.slice().sort((a,b)=>{if(Number(b.score)!==Number(a.score))return Number(b.score)-Number(a.score);const ta=a.timeMs==null?Infinity:Number(a.timeMs),tb=b.timeMs==null?Infinity:Number(b.timeMs);return ta-tb})}
-function renderRankingList(arr){const top3=sortRanking(arr).slice(0,3);$("ranking").classList.remove("rank-loading");$("ranking").innerHTML=top3.length?top3.map((x,i)=>`<div class="rank-row"><div class="medal">${["🥇","🥈","🥉"][i]}</div><div class="rank-name">${escapeHtml(x.name)}</div><div class="rank-meta"><div class="rank-score">${x.score} pts</div><div class="rank-time">${formatTime(x.timeMs)}</div></div></div>`).join(""):"<p class='notice'>Ainda não há registros. Seja o primeiro do plantão!</p>"}
-async function pushToGlobalRanking(entry){try{await firestore.collection("ranking").add({name:String(entry.name||"Profissional").slice(0,40),score:Number(entry.score)||0,timeMs:Number(entry.timeMs)||0,date:String(entry.date||new Date().toISOString())});$("rankNotice").textContent="Seu resultado foi salvo no ranking global.";return true}catch(e){console.error("Erro ao salvar ranking:",e);$("rankNotice").textContent="Não foi possível salvar no ranking global agora.";pushLocalFallback(entry);return false}}
-function startRankingPolling(){$("ranking").classList.add("rank-loading");if(rankingUnsub){rankingUnsub();rankingUnsub=null}rankingUnsub=firestore.collection("ranking").onSnapshot(snap=>{renderRankingList(snap.docs.map(d=>d.data()).filter(Boolean))},error=>{console.error("Erro ao carregar ranking:",error);$("rankNotice").textContent="Não foi possível carregar o ranking global agora.";renderRankingList(getLocalFallback())})}
+function renderRankingList(arr){
+  const top3=sortRanking(arr).slice(0,3);
+  $("ranking").classList.remove("rank-loading");
+  $("ranking").innerHTML=top3.length?top3.map((x,i)=>`<div class="rank-row"><div class="medal">${["🥇","🥈","🥉"][i]}</div><div class="rank-name">${escapeHtml(x.name)}</div><div class="rank-meta"><div class="rank-score">${x.score} pts</div><div class="rank-time">${formatTime(x.timeMs)}</div></div></div>`).join(""):"<p class='notice'>Ainda não há registros. Seja o primeiro do plantão!</p>";
+}
+function showRankingError(message){
+  if(rankingTimeout){clearTimeout(rankingTimeout);rankingTimeout=null}
+  $("ranking").classList.remove("rank-loading");
+  $("rankNotice").textContent=message;
+  const local=getLocalFallback();
+  renderRankingList(local);
+}
+async function pushToGlobalRanking(entry){
+  try{
+    await firestore.collection("ranking").add({
+      name:String(entry.name||"Profissional").slice(0,40),
+      score:Number(entry.score)||0,
+      timeMs:Number(entry.timeMs)||0,
+      date:String(entry.date||new Date().toISOString())
+    });
+    $("rankNotice").textContent="Seu resultado foi salvo no ranking global.";
+    return true;
+  }catch(e){
+    console.error("Erro ao salvar ranking:",e);
+    $("rankNotice").textContent="Não foi possível salvar no ranking global. Confira as regras do Firestore.";
+    pushLocalFallback(entry);
+    return false;
+  }
+}
+function startRankingPolling(){
+  $("ranking").classList.add("rank-loading");
+  if(rankingUnsub){rankingUnsub();rankingUnsub=null}
+  if(rankingTimeout)clearTimeout(rankingTimeout);
+
+  rankingTimeout=setTimeout(()=>{
+    if(rankingUnsub){rankingUnsub();rankingUnsub=null}
+    showRankingError("O ranking global demorou para responder. Verifique as regras/conexão do Firestore.");
+  },8000);
+
+  try{
+    rankingUnsub=firestore.collection("ranking").onSnapshot(
+      snap=>{
+        if(rankingTimeout){clearTimeout(rankingTimeout);rankingTimeout=null}
+        console.log("Ranking Firestore carregado:",snap.size,"registro(s)");
+        renderRankingList(snap.docs.map(d=>d.data()).filter(Boolean));
+      },
+      error=>{
+        console.error("Erro ao carregar ranking do Firestore:",error);
+        showRankingError("Não foi possível carregar o ranking global. Se aparecer 'permission-denied' no console, as regras do Firestore ainda precisam ser ajustadas.");
+      }
+    );
+  }catch(e){
+    console.error("Falha ao iniciar ranking Firestore:",e);
+    showRankingError("Falha ao iniciar o ranking global. Confira se o Firebase foi configurado corretamente.");
+  }
+}
 
 function renderQuestion(){
   const x=questions[state.q];
